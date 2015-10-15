@@ -1,0 +1,44 @@
+#!/bin/bash
+# usage: bin/compile <build-dir> <cache-dir> <env-dir>
+
+set -e -o pipefail
+
+mkdir -p "$1" "$2/oa2p"
+build=$(cd "$1/" && pwd)
+cache=$(cd "$2/" && pwd)
+env_dir="$3"
+this_dir=$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)
+gb_project_dir=$(cd $(dirname $this_dir) && pwd)
+
+if [[ ! -x "$cache/oa2p/oauth2_proxy" ]]; then
+    gb_compile_ver=832cbba5258579e89e950a043cefd060a0c04c93
+    gb_compile_cached_ver=""
+    if [[ -f "$cache/oa2p/gb-compile.ver" ]]; then
+        gb_compile_cached_ver=$(cat "$cache/oa2p/gb-compile.ver")
+    fi
+
+    if [[ ! "$gb_compile_ver" == "$gb_compile_cached_ver" ]]; then
+        echo -n "-----> Preparing to build oauth2_proxy ..."
+        curl --show-error -so "$cache/oa2p/gb-compile" \
+             https://raw.githubusercontent.com/paxan/heroku-buildpack-gb/$gb_compile_ver/bin/compile
+        chmod +x "$cache/oa2p/gb-compile"
+        echo $gb_compile_ver > "$cache/oa2p/gb-compile.ver"
+        echo " done"
+    fi
+
+    echo "-----> Building oauth2_proxy ..."
+    # build oauth2_proxy using gb
+    WITH_GB_CACHING=true "$cache/oa2p/gb-compile" "$gb_project_dir" "$cache/oa2p" "$env_dir"
+    cp "$gb_project_dir/bin/oauth2_proxy" "$cache/oa2p/"
+fi
+
+echo -n "-----> Installing oauth2_proxy ..."
+mkdir -p "$build/.oa2p.d"
+cp "$cache/oa2p/oauth2_proxy" "$build/.oa2p.d/"
+cp "$this_dir/oa2p" "$build/.oa2p.d/"
+echo " done"
+
+mkdir -p "$build/.profile.d"
+cat <<"EOF" > "$build/.profile.d/oa2p-profile.sh"
+export PATH=.oa2p.d:$PATH
+EOF

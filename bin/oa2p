@@ -1,0 +1,81 @@
+#!/bin/bash
+
+set -e -o pipefail
+
+this_dir=$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)
+base_dir=$(cd $(dirname $this_dir) && pwd)
+
+upstream_port=${OA2P_UPSTREAM_PORT:-8777}
+upstream_url="http://localhost:$upstream_port"
+
+await_upstream() {
+    if [[ -n $(type -P supervise || echo "") ]]; then
+        svc_dir=$base_dir
+        if [[ -x "$svc_dir/run" ]]; then
+            PORT=$upstream_port supervise "$svc_dir" &
+            echo "oa2p: started supervise with PORT=$upstream_port"
+        else
+            echo "oa2p: script 'run' is not found at the root of your app!"
+            exit 1
+        fi
+    else
+        echo "oa2p: daemontools' supervise is not installed!"
+        exit 1
+    fi
+    # await
+    while [[ -n $(curl -so /dev/null $upstream_url || echo "NO") ]]; do
+        echo "oa2p: waiting for \"$upstream_url\" to start..."
+        sleep 3
+    done
+}
+
+email_domain_opt=""
+if [[ -n "$OA2P_EMAIL_DOMAIN" ]]; then
+    email_domain_opt="-email-domain=$OA2P_EMAIL_DOMAIN"
+fi
+
+authenticated_emails_file_opt=""
+if [[ -n "$OA2P_AUTHORIZED_EMAILS" ]]; then
+    rm -f $this_dir/authorized-emails
+    for i in $OA2P_AUTHORIZED_EMAILS; do
+        echo $i >> $this_dir/authorized-emails
+    done
+    if [[ -f $this_dir/authorized-emails ]]; then
+        authenticated_emails_file_opt="-authenticated-emails-file $this_dir/authorized-emails"
+    fi
+fi
+
+cookie_name_opt=""
+if [[ -n "$OA2P_COOKIE_NAME" ]]; then
+    cookie_name_opt="-cookie-name $OA2P_COOKIE_NAME"
+fi
+
+pass_basic_auth_opt=""
+if [[ -n "$OA2P_PASS_BASIC_AUTH" ]]; then
+    pass_basic_auth_opt="-pass-basic-auth=$OA2P_PASS_BASIC_AUTH"
+fi
+
+skip_auth_regex_opts=""
+if [[ -n "$OA2P_SKIP_AUTH_PATTERNS" ]]; then
+    for i in $OA2P_SKIP_AUTH_PATTERNS; do
+        skip_auth_regex_opts="$skip_auth_regex_opts -skip-auth-regex=$i"
+    done
+fi
+
+await_upstream
+
+echo "oa2p: starting oauth2_proxy..."
+exec oauth2_proxy \
+     -http-address=http://${OA2P_BIND_ADDRESS:-0.0.0.0}:$PORT \
+     $email_domain_opt \
+     $authenticated_emails_file_opt \
+     -cookie-secure=${OA2P_COOKIE_SECURE:-true} \
+     -cookie-secret=$OA2P_COOKIE_SECRET \
+     -cookie-refresh=${OA2P_COOKIE_REFRESH:-1h} \
+     $cookie_name_opt \
+     $pass_basic_auth_opt \
+     $skip_auth_regex_opts \
+     -upstream=$upstream_url \
+     -client-id=$OA2P_GOOGLE_CLIENT_ID \
+     -client-secret=$OA2P_GOOGLE_CLIENT_SECRET \
+     -request-logging=false

@@ -1,0 +1,3 @@
+#!/bin/bash
+# usage: bin/detect <build-dir>
+echo "oauth2_proxy"
