@@ -40,5 +40,10 @@ echo " done"
 
 mkdir -p "$build/.profile.d"
 cat <<"EOF" > "$build/.profile.d/oa2p-profile.sh"
-export PATH=.oa2p.d:$PATH
+app_dir=$(pwd)
+if [[ $(uname) != Darwin ]]; then
+    # On a real dyno, $HOME points at the app directory
+    app_dir=$HOME
+fi
+export PATH="$app_dir/.oa2p.d:$PATH"
 EOF
