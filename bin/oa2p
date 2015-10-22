@@ -2,22 +2,32 @@
 
 set -e -o pipefail
 
-this_dir=$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)
-base_dir=$(cd $(dirname $this_dir) && pwd)
+if [[ -z $1 ]]; then
+    echo "oa2p: must have at least one command line argument!"
+    echo "usage: oa2p arg1 [arg2 ... ]"
+    exit 1
+fi
 
+this_dir=$(cd $(dirname ${BASH_SOURCE[0]}) && pwd)
+prog_wd="$(pwd)"
+prog="$1"
+shift
+prog_args="$@"
 upstream_port=${OA2P_UPSTREAM_PORT:-8777}
 upstream_url="http://localhost:$upstream_port"
 
 await_upstream() {
     if [[ -n $(type -P supervise || echo "") ]]; then
-        svc_dir=$base_dir
-        if [[ -x "$svc_dir/run" ]]; then
-            PORT=$upstream_port supervise "$svc_dir" &
-            echo "oa2p: started supervise with PORT=$upstream_port"
-        else
-            echo "oa2p: script 'run' is not found at the root of your app!"
-            exit 1
-        fi
+        svc_dir="$this_dir/upstream-svc"
+        mkdir -p "$svc_dir"
+        cat <<EOF > "$svc_dir/run"
+#!/bin/bash
+cd "$prog_wd"
+exec "$prog" "$prog_args"
+EOF
+        chmod +x "$svc_dir/run"
+        PORT=$upstream_port supervise "$svc_dir" &
+        echo "oa2p: started supervise with PORT=$upstream_port"
     else
         echo "oa2p: daemontools' supervise is not installed!"
         exit 1
