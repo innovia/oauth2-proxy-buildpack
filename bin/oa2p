@@ -23,7 +23,7 @@ await_upstream() {
         cat <<EOF > "$svc_dir/run"
 #!/bin/bash
 cd "$prog_wd"
-exec "$prog" "$prog_args"
+exec $prog $prog_args
 EOF
         chmod +x "$svc_dir/run"
         PORT=$upstream_port supervise "$svc_dir" &
